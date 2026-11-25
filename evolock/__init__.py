@@ -1,0 +1,1 @@
+"""EvoLock desktop application."""

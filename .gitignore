@@ -1,0 +1,33 @@
+# Local Python environments and bytecode
+.venv/
+venv/
+venv_broken_*/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Personal state, credentials, and historical copies
+data/*
+!data/.gitkeep
+!data/*.example.json
+archive/
+logs/
+.env
+.env.*
+!.env.example
+*-WIN-*
+
+# Local tooling and generated documents
+.claude/
+.codex-build/
+output/
+
+# Google OAuth client secrets and tokens (never commit)
+client_secret*.json
+credentials*.json
+token*.json
+*.pem
+*.key
+
+# Raw source media (not used by the app)
+assets/source_media/

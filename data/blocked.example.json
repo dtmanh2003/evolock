@@ -1,0 +1,8 @@
+{
+  "apps": [
+    "chrome.exe",
+    "msedge.exe",
+    "steam.exe",
+    "discord.exe"
+  ]
+}

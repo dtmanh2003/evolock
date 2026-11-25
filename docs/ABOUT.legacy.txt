@@ -1,0 +1,197 @@
+================================================================================
+  EVOLOCK — GIỚI THIỆU TỪNG THÀNH PHẦN
+  Ứng dụng tự kỷ luật học tập | Python + tkinter | Windows
+================================================================================
+
+  Mục tiêu: Chặn các app giải trí (game, mạng xã hội) trong giờ học.
+  Sau khi học đủ thời gian, app tự mở khóa. Mật khẩu do người khác giữ.
+
+--------------------------------------------------------------------------------
+  CÁC FILE PYTHON (.py)
+--------------------------------------------------------------------------------
+
+[ main.py ]
+  - File chính, chứa toàn bộ giao diện tkinter (UI).
+  - Lớp EvoLockApp: quản lý state machine gồm 4 trạng thái:
+      idle       → đang chờ, chưa bắt đầu
+      studying   → đang học, blocker đang bật
+      unlocked   → đã học xong, đang trong giờ chơi
+      locked     → hết giờ chơi, bị khóa lại
+  - 5 tab:
+      ロック  (Khóa)   → bắt đầu/dừng học, đếm ngược, danh sách app bị chặn
+      タスク  (Task)   → thêm/hoàn thành/xóa nhiệm vụ
+      Stats           → EXP, level, streak, thành tích
+      AIコーチ         → phân tích thói quen học 7 ngày gần nhất
+      設定   (Cài đặt) → mật khẩu, ghi chú, startup, whitelist YouTube, AI
+  - Khi đóng cửa sổ: nếu có pystray → thu về tray; nếu không → hỏi thoát.
+
+[ blocker.py ]
+  - Chứa 3 lớp chính:
+      WhitelistManager  → quản lý danh sách kênh YouTube được phép xem
+      SmartClassifier   → dùng sentence-transformers (all-MiniLM-L6-v2) để
+                          phân loại tiêu đề tab trình duyệt là "học" hay "giải trí"
+      Blocker           → vòng lặp mỗi 3 giây, duyệt process, kill nếu cần
+  - Logic chặn browser (chrome, firefox, edge...):
+      Lớp 1: Nếu tab đang xem kênh YouTube trong whitelist → cho phép
+      Lớp 2: AI phân loại tiêu đề → nếu là "học" → cho phép
+      Lớp 3: Không qua được 2 lớp trên → kill process
+  - Danh sách app bị chặn được cache khi khởi động (không đọc file mỗi 3s).
+
+[ config.py ]
+  - Quản lý file config.json: đọc/ghi cài đặt.
+  - Lưu trữ mật khẩu bằng PBKDF2-HMAC-SHA256 (100.000 vòng lặp + salt).
+  - Tự động nâng cấp hash cũ (SHA-256 thuần) lên PBKDF2 khi đăng nhập thành công.
+  - Hai loại mã:
+      password_hash    → mật khẩu chính (do người khác giữ)
+      emergency_hash   → mã khẩn cấp (tự giữ, dùng khi thực sự cần thiết)
+  - Trường password_note: ghi chú tự do (plaintext, không mã hóa).
+  - Cài đặt được lưu: mật khẩu, startup, API key, Ollama model, mục tiêu ngày, ghi chú.
+
+[ gamification.py ]
+  - Hệ thống game hóa: EXP, Level, Streak (chuỗi ngày liên tiếp), Thành tích.
+  - EXP nhận được:
+      +50 EXP khi hoàn thành 1 task
+      +20 EXP mỗi 10 phút học
+      -100 EXP khi dùng emergency code (có thể xuống level)
+  - Cấp độ: mỗi level cần level × 100 EXP để lên.
+  - Ranks theo level: 小学生 → 大学生 → 研究生 → 専門家 → 達人 → 伝説
+  - 10 thành tích: first_task, task_10, task_50, streak_3/7/30,
+                   level_5/10, study_60min, study_300min.
+  - Dữ liệu lưu vào stats.json.
+
+[ history.py ]
+  - Ghi lại từng phiên học (study) và phiên chơi (play).
+  - Mỗi phiên lưu: loại, giờ bắt đầu/kết thúc, số phút, ngày.
+  - Phiên dưới 1 phút không được ghi (tránh nhiễu).
+  - Dữ liệu lưu vào history.json.
+  - Phương thức hữu ích:
+      today()            → các phiên hôm nay
+      last_n_days(n)     → phiên trong n ngày gần nhất (dùng cho AI coach)
+      today_study_minutes() → tổng phút học hôm nay
+
+[ tasks.py ]
+  - Quản lý danh sách nhiệm vụ (task).
+  - Mỗi task có: id, tên, loại (学習/仕事/読書/運動/その他), trạng thái,
+                 thời gian tạo, thời gian hoàn thành.
+  - Hoàn thành task → mở khóa app ngay lập tức (dù chưa hết giờ học).
+  - Dữ liệu lưu vào tasks.json.
+
+[ timer.py ]
+  - Bộ đếm ngược CountdownTimer chạy trên thread riêng.
+  - Dùng time.monotonic() để tránh drift (sai số tích lũy) theo thời gian.
+  - Gọi on_tick(remaining) mỗi giây, on_done() khi về 0.
+  - Tất cả callback được lên lịch qua root.after() để an toàn với tkinter.
+
+[ ai_coach.py ]
+  - Phân tích thói quen học 7 ngày gần nhất và dữ liệu dùng mật khẩu.
+  - Ba chế độ hoạt động (ưu tiên theo thứ tự):
+      1. Ollama (local AI) — cần cài ollama + chạy "ollama serve"
+      2. Anthropic API   — cần API key (Claude Haiku)
+      3. Offline          — phân tích tĩnh bằng rule-based, không cần internet
+  - Nội dung phân tích:
+      · Trung bình phút học/ngày, tổng, xu hướng (tăng/giảm/ổn định)
+      · Số lần dừng học sớm bằng mật khẩu
+      · Giờ hay dừng nhất (sáng/chiều/tối)
+      · Số lần dùng emergency code
+      · Đề xuất cụ thể dựa trên pattern
+
+[ pw_log.py ]
+  - Ghi lại mỗi lần mật khẩu được dùng thành công.
+  - Hai loại sự kiện:
+      "password"  → dùng mật khẩu chính (dừng học / thoát app)
+      "emergency" → dùng mã khẩn cấp
+  - Giữ tối đa 300 sự kiện gần nhất (~1 năm dùng bình thường).
+  - Phương thức summary(n) trả về thống kê: tổng lần dừng, số lần dùng
+    emergency, phân bố theo giờ trong ngày, ngày hay dừng nhất.
+  - Dữ liệu lưu vào pw_log.json.
+
+[ protection.py ]
+  - Đăng ký / xóa EvoLock khỏi Windows startup qua Registry.
+  - Khóa: HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+  - Dùng context manager (with) để đảm bảo registry key luôn được đóng.
+
+[ watchdog.py ]
+  - Chạy độc lập như một process riêng biệt.
+  - Mỗi 15 giây kiểm tra xem main.py có đang chạy không.
+  - Nếu không tìm thấy → tự động khởi động lại EvoLock.
+  - Nhận diện bằng đường dẫn tuyệt đối (tránh false positive).
+  - Cách dùng: thêm thủ công vào Windows startup:
+      python "đường-dẫn\watchdog.py"
+
+--------------------------------------------------------------------------------
+  CÁC FILE DỮ LIỆU (.json)
+--------------------------------------------------------------------------------
+
+[ blocked.json ]
+  - Danh sách tên process bị chặn khi đang học.
+  - Chỉnh sửa thủ công bằng Notepad hoặc bất kỳ text editor nào.
+  - Ví dụ mặc định: chrome.exe, steam.exe, discord.exe, valorant.exe...
+  - Format:
+      { "apps": ["chrome.exe", "steam.exe", ...] }
+
+[ whitelist.json ]
+  - Danh sách kênh YouTube được phép xem dù đang học.
+  - Quản lý qua giao diện (tab 設定 → 許可チャンネル).
+  - Mặc định có sẵn: Khan Academy, freeCodeCamp, MIT OpenCourseWare, TED...
+  - Format:
+      { "channels": ["Khan Academy", "freeCodeCamp.org", ...] }
+
+[ config.json ]
+  - Toàn bộ cài đặt của app.
+  - CÁC TRƯỜNG NHẠY CẢM (không chia sẻ file này):
+      password_hash / password_salt  → mật khẩu chính (PBKDF2)
+      emergency_hash / emergency_salt → mã khẩn cấp (PBKDF2)
+      anthropic_api_key               → API key Anthropic
+      password_note                   → ghi chú mật khẩu (plaintext)
+  - Các trường thông thường:
+      daily_goal_minutes → mục tiêu học mỗi ngày (mặc định 120 phút)
+      ollama_model       → tên model Ollama (ví dụ: llama3.2)
+      startup_enabled    → có tự khởi động cùng Windows không
+
+[ stats.json ]
+  - Dữ liệu hệ thống game hóa.
+  - Nội dung: exp, level, streak, last_active_date, total_tasks,
+              total_study_minutes, today_study_minutes, today_date,
+              unlocked_achievements.
+
+[ history.json ]
+  - Lịch sử tất cả phiên học và phiên chơi từ trước đến nay.
+  - Mỗi phiên có: session_type, start_time, end_time, duration_minutes, date.
+
+[ tasks.json ]
+  - Danh sách nhiệm vụ hiện tại và đã hoàn thành.
+
+[ pw_log.json ]
+  - Nhật ký mỗi lần mật khẩu được dùng thành công.
+  - Dùng để AI coach phân tích thói quen dừng học.
+
+--------------------------------------------------------------------------------
+  LUỒNG HOẠT ĐỘNG CHÍNH
+--------------------------------------------------------------------------------
+
+  1. Mở app → EvoLockApp.__init__() → load config, blocker, game, history
+  2. SmartClassifier tải model AI vào background thread
+  3. Bấm "学習開始":
+       - Nếu chưa có mật khẩu → tự tạo ngẫu nhiên → hiển thị + lưu vào memo
+       - Blocker bắt đầu kill process mỗi 3 giây
+       - CountdownTimer đếm ngược thời gian học
+  4. Timer về 0 → _enter_unlocked() → blocker dừng, timer chơi bắt đầu
+  5. Timer chơi về 0 → _enter_locked() → blocker bật lại
+  6. Bấm "学習を止める" → hỏi mật khẩu → nếu đúng → ghi session → về idle
+  7. Thoát app → hỏi mật khẩu → ghi session → destroy window
+
+--------------------------------------------------------------------------------
+  YÊU CẦU HỆ THỐNG
+--------------------------------------------------------------------------------
+
+  - Python 3.10+
+  - Windows (dùng winreg, ctypes.windll, psutil)
+  - Thư viện bắt buộc:   psutil
+  - Thư viện tùy chọn:   pystray + Pillow  (tray icon)
+                          sentence-transformers + scikit-learn  (smart block)
+                          anthropic  (AI coach qua API)
+
+  Cài đặt:  pip install -r requirements.txt
+  Chạy:     python main.py
+
+================================================================================

@@ -1,0 +1,40 @@
+import sys
+import winreg
+from evolock.paths import MAIN_SCRIPT
+
+APP_NAME = "EvoLock"
+
+
+def _startup_cmd() -> str:
+    python = sys.executable
+    return f'"{python}" "{MAIN_SCRIPT}"'
+
+
+_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+
+def add_to_startup() -> bool:
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+            winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, _startup_cmd())
+        return True
+    except Exception:
+        return False
+
+
+def remove_from_startup() -> bool:
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+            winreg.DeleteValue(key, APP_NAME)
+        return True
+    except Exception:
+        return False
+
+
+def is_in_startup() -> bool:
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_READ) as key:
+            winreg.QueryValueEx(key, APP_NAME)
+        return True
+    except Exception:
+        return False
